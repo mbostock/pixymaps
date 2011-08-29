@@ -10,10 +10,18 @@ body {
   font: 10px sans-serif;
 }
 
+#container {
+  width: 960px;
+  height: 500px;
+  overflow: hidden;
+}
+
     </style>
   </head>
   <body>
-    <canvas id="map" width="960" height="500"></canvas>
+    <div id="container">
+      <canvas id="map"></canvas>
+    </div>
     <script type="text/javascript">
 
 var canvas = d3.select("#map").call(drag),
@@ -39,7 +47,7 @@ var image = pixymaps.image()
     + "/1a1b06b230af4efdbb989ea99e9841af" // http://cloudmade.com/register
     + "/999/256/{Z}/{X}/{Y}.png")
     .hosts(["a.", "b.", "c.", ""]))
-    .render(context);
+    .render(canvas.node());
 
 function drag(selection) {
   var p0;
@@ -56,7 +64,7 @@ function drag(selection) {
     if (p0) {
       var p1 = [d3.event.pageX, d3.event.pageY];
       view.panBy([p1[0] - p0[0], p1[1] - p0[1]]);
-      image.render(context);
+      image.render(canvas.node());
       p0 = p1;
       d3.event.preventDefault();
     }

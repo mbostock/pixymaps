@@ -22,8 +22,9 @@ pixymaps.image = function() {
     return image;
   };
 
-  image.render = function(context, callback) {
-    var viewSize = view.size(),
+  image.render = function(canvas, callback) {
+    var context = canvas.getContext("2d"),
+        viewSize = view.size(),
         viewAngle = view.angle(),
         viewCenter = view.center(),
         viewZoom = viewCenter[2],
@@ -52,20 +53,18 @@ pixymaps.image = function() {
         dx = coordinateSize[0],
         dy = coordinateSize[1];
 
-    // allocate an offscreen buffer to draw tiles
-    var offcanvas = document.createElement("canvas"),
-        offcontext = offcanvas.getContext("2d");
-
-    // disable offscreen antialiasing; that happens at the end
-    offcontext.antialias = "none";
-    offcanvas.width = (x1 - x0) * dx;
-    offcanvas.height = (y1 - y0) * dy;
-
     // compute the set of visible tiles using scan conversion
     var tiles = [], z = c0[2], remaining = 0;
     scanTriangle(c0, c1, c2, push);
     scanTriangle(c2, c3, c0, push);
     function push(x, y) { remaining = tiles.push([x, y, z]); }
+
+    // set the canvas size and transform
+    var tx = viewSize[0] / 2 + dx * (x0 - viewCenter[0] * kz) | 0,
+        ty = viewSize[1] / 2 + dy * (y0 - viewCenter[1] * kz) | 0;
+    canvas.style.webkitTransform = "matrix3d(1,0,0,0,0,1,0,0,0,0,1,0," + tx + "," + ty + ",0,1)";
+    canvas.width = (x1 - x0) * dx;
+    canvas.height = (y1 - y0) * dy;
 
     // load each tile (hopefully from the cache) and draw it to the canvas
     tiles.forEach(function(tile) {
@@ -73,21 +72,14 @@ pixymaps.image = function() {
 
       // If there's something to show for this tile, show it.
       return key == null ? done() : pixymaps_cache(key, function(image) {
-        offcontext.drawImage(image, dx * (tile[0] - x0), dy * (tile[1] - y0));
+        context.drawImage(image, dx * (tile[0] - x0), dy * (tile[1] - y0));
         done();
       });
 
-      // if that was the last tile, draw onscreen and callback!
+      // if that was the last tile, callback!
       function done() {
-        if (!--remaining) {
-          context.save();
-          context.translate(viewSize[0] / 2, viewSize[1] / 2);
-          context.rotate(viewAngle);
-          context.scale(1 / kz, 1 / kz);
-          context.drawImage(offcanvas, dx * (x0 - viewCenter[0] * kz) | 0, dy * (y0 - viewCenter[1] * kz) | 0);
-          context.restore();
-
-          if (callback) callback();
+        if (!--remaining && callback) {
+          callback();
         }
       }
     });

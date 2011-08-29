@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script type="text/javascript" src="../../pixymaps.js"></script>
+    <script type="text/javascript" src="../../lib/d3/d3.js"></script>
+    <script type="text/javascript" src="../../lib/d3/d3.geo.js"></script>
+    <style type="text/css">
+
+body {
+  font: 10px sans-serif;
+}
+
+#container {
+  width: 960px;
+  height: 500px;
+  overflow: hidden;
+}
+
+    </style>
+  </head>
+  <body>
+    <div id="container">
+      <canvas id="map"></canvas>
+    </div>
+    <script type="text/javascript">
+
+var canvas = d3.select("#map"),
+    context = canvas.node().getContext("2d");
+
+var w = 960,
+    h = 500,
+    lon = -122.41948,
+    lat = 37.76487;
+
+var project = d3.geo.mercator()
+    .scale(1)
+    .translate([.5, .5]);
+
+var view = pixymaps.view()
+    .size([w, h])
+    .center(project([lon, lat]))
+    .zoom(12);
+
+var image = pixymaps.image()
+    .view(view)
+    .url(pixymaps.url("http://{S}tile.cloudmade.com"
+    + "/1a1b06b230af4efdbb989ea99e9841af" // http://cloudmade.com/register
+    + "/999/256/{Z}/{X}/{Y}.png")
+    .hosts(["a.", "b.", "c.", ""]))
+    .render(canvas.node());
+
+var speed = 0,
+    acceleration = -.05;
+
+d3.timer(function() {
+  speed = Math.max(-5, speed + acceleration);
+  view.panBy([speed, 0]);
+  image.render(canvas.node());
+});
+
+    </script>
+    <div id="copy">
+      &copy; 2011
+      <a href="http://www.cloudmade.com/">CloudMade</a>,
+      <a href="http://www.openstreetmap.org/">OpenStreetMap</a> contributors,
+      <a href="http://creativecommons.org/licenses/by-sa/2.0/">CCBYSA</a>.
+    </div>
+  </body>
+</html>
