@@ -84,7 +84,7 @@ pixymaps.image = function() {
           context.translate(viewSize[0] / 2, viewSize[1] / 2);
           context.rotate(viewAngle);
           context.scale(1 / kz, 1 / kz);
-          context.drawImage(offcanvas, dx * (x0 - viewCenter[0] * kz), dy * (y0 - viewCenter[1] * kz));
+          context.drawImage(offcanvas, dx * (x0 - viewCenter[0] * kz) | 0, dy * (y0 - viewCenter[1] * kz) | 0);
           context.restore();
 
           if (callback) callback();
