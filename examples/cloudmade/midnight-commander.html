@@ -16,11 +16,11 @@ body {
     <canvas id="map" width="960" height="500"></canvas>
     <script type="text/javascript">
 
-var canvas = d3.select("#map").node(),
-    context = canvas.getContext("2d");
+var canvas = d3.select("#map").call(drag),
+    context = canvas.node().getContext("2d");
 
-var w = canvas.width,
-    h = canvas.height,
+var w = 960,
+    h = 500,
     lon = -122.41948,
     lat = 37.76487;
 
@@ -38,11 +38,37 @@ var image = pixymaps.image()
     .url(pixymaps.url("http://{S}tile.cloudmade.com"
     + "/1a1b06b230af4efdbb989ea99e9841af" // http://cloudmade.com/register
     + "/999/256/{Z}/{X}/{Y}.png")
-    .hosts(["a.", "b.", "c.", ""]));
+    .hosts(["a.", "b.", "c.", ""]))
+    .render(context);
 
-image.render(context, function() {
-  console.log("hooray");
-});
+function drag(selection) {
+  var p0;
+
+  selection.on("mousedown", mousedown);
+  d3.select(window).on("mousemove", mousemove).on("mouseup", mouseup);
+
+  function mousedown() {
+    p0 = [d3.event.pageX, d3.event.pageY];
+    d3.event.preventDefault();
+  }
+
+  function mousemove() {
+    if (p0) {
+      var p1 = [d3.event.pageX, d3.event.pageY];
+      view.panBy([p1[0] - p0[0], p1[1] - p0[1]]);
+      image.render(context);
+      p0 = p1;
+      d3.event.preventDefault();
+    }
+  }
+
+  function mouseup() {
+    if (p0) {
+      p0 = null;
+      d3.event.preventDefault();
+    }
+  }
+}
 
     </script>
     <div id="copy">
