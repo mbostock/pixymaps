@@ -1,5 +1,5 @@
 JS_COMPILER = \
-	./lib/uglifyjs/bin/uglifyjs
+	node_modules/uglify-js/bin/uglifyjs
 
 all: \
 	pixymaps.js \
@@ -8,11 +8,12 @@ all: \
 .INTERMEDIATE pixymaps.js: \
 	src/start.js \
 	src/index.js \
-	src/cache.js \
-	src/image.js \
+	src/dispatch.js \
 	src/queue.js \
+	src/cache.js \
 	src/url.js \
 	src/view.js \
+	src/image.js \
 	src/end.js
 
 %.min.js: %.js Makefile

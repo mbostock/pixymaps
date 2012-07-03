@@ -1,50 +1,37 @@
-var pixymaps_imageId = 0;
-
-pixymaps_viewPrototype.image = function() {
-  var image = {},
-      id = "image" + (++pixymaps_imageId),
-      view = this,
-      url,
+d3.geo.tile = function() {
+  var url,
       zoom = Math.round,
-      visible,
-      dragging,
       node = document.createElement("div"),
       canvas = node.appendChild(document.createElement("canvas")),
-      context = canvas.getContext("2d");
+      context = canvas.getContext("2d"),
+      projection = d3.geo.mercator();
 
   node.style.overflow = "hidden";
 
-  image.url = function(x) {
-    if (!arguments.length) return url;
-    url = typeof x === "string" && /{.}/.test(x) ? _url(x) : x;
-    render();
-    return image;
-  };
+  function tile() {
+    var width = node.clientWidth,
+        height = node.clientHeight;
 
-  image.zoom = function(x) {
-    if (!arguments.length) return zoom;
-    zoom = typeof x === "function" ? x : function() { return x; };
-    render();
-    return image;
-  };
+    canvas.width = width;
+    canvas.height = height;
 
-  image.visible = function(x) {
-    if (!arguments.length) return visible;
-    view.on("move." + id, (visible = x) ? render : null);
-    return image;
-  };
+//         l0 = projection.invert([0, 0]),
+//         l1 = projection.invert([width, 0]),
+//         l2 = projection.invert([0, height]),
+//         l3 = projection.invert([width, height]);
 
-  image.node = function() {
-    return node;
-  };
+    var x0 = projection([-180, 85.05112877980659]),
+        x1 = projection([180, -85.05112877980659]);
 
-  function render() {
-    var viewSize = view.size(),
-        viewAngle = view.angle(),
-        viewCenter = view.center(),
-        viewZoom = viewCenter[2],
-        coordinateSize = view.coordinateSize();
+    var key = url([0, 0, 0]);
+    if (key != null) {
+      pixymaps_cache(key, function(image) {
+        context.drawImage(image, x0, x1); // TODO scale
+      });
+    }
 
+
+/*
     // compute the zoom offset and scale
     var dz = viewZoom - (viewZoom = zoom(viewZoom)),
         kz = Math.pow(2, -dz);
@@ -92,9 +79,33 @@ pixymaps_viewPrototype.image = function() {
         context.drawImage(image, dx * (tile[0] - x0), dy * (tile[1] - y0));
       });
     });
+*/
+
   }
 
-  return image.visible(true);
+  tile.url = function(x) {
+    if (!arguments.length) return url;
+    url = typeof x === "string" && /{.}/.test(x) ? _url(x) : x;
+    return tile;
+  };
+
+  tile.zoom = function(x) {
+    if (!arguments.length) return zoom;
+    zoom = typeof x === "function" ? x : function() { return x; };
+    return tile;
+  };
+
+  tile.projection = function(x) {
+    if (!arguments.length) return projection;
+    projection = x;
+    return tile;
+  };
+
+  tile.node = function() {
+    return node;
+  };
+
+  return tile;
 };
 
 // scan-line conversion
@@ -151,3 +162,47 @@ function scanTriangle(a, b, c, load) {
   if (ab.dy) scanSpans(ca, ab, load);
   if (bc.dy) scanSpans(ca, bc, load);
 }
+
+d3.geo.url = function(template) {
+  var hosts = [],
+      repeat = "repeat-x"; // repeat, repeat-y, no-repeat
+
+  function url(c) {
+    var x = c[0], y = c[1], z = c[2], max = 1 << z;
+
+    // Repeat-x and repeat-y.
+    if (/^repeat(-x)?$/.test(repeat) && (x = x % max) < 0) x += max;
+    if (/^repeat(-y)?$/.test(repeat) && (y = y % max) < 0) y += max;
+    if (z < 0 || x < 0 || x >= max || y < 0 || y >= max) return null;
+
+    return template.replace(/{(.)}/g, function(s, v) {
+      switch (v) {
+        case "X": return x;
+        case "Y": return y;
+        case "Z": return z;
+        case "S": return hosts[Math.abs(x + y + z) % hosts.length];
+      }
+      return v;
+    });
+  }
+
+  url.template = function(x) {
+    if (!arguments.length) return template;
+    template = x;
+    return url;
+  };
+
+  url.hosts = function(x) {
+    if (!arguments.length) return hosts;
+    hosts = x;
+    return url;
+  };
+
+  url.repeat = function(x) {
+    if (!arguments.length) return repeat;
+    repeat = x;
+    return url;
+  };
+
+  return url;
+};

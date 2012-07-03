@@ -1,5 +1,7 @@
+var pixymaps_viewPrototype = pixymaps_view.prototype;
+
 pixymaps.view = function() {
-  var view = {},
+  var view = new pixymaps_view(),
       size = [0, 0],
       coordinateSize = [256, 256],
       center = [.5, .5, 0],
@@ -7,7 +9,8 @@ pixymaps.view = function() {
       angleCos = 1, // Math.cos(angle)
       angleSin = 0, // Math.sin(angle)
       angleCosi = 1, // Math.cos(-angle)
-      angleSini = 0; // Math.sin(-angle)
+      angleSini = 0, // Math.sin(-angle)
+      dispatch = pixymaps.dispatch("move");
 
   view.point = function(coordinate) {
     var kc = Math.pow(2, center[2] - (coordinate.length < 3 ? 0 : coordinate[2])),
@@ -33,12 +36,14 @@ pixymaps.view = function() {
   view.coordinateSize = function(x) {
     if (!arguments.length) return coordinateSize;
     coordinateSize = x;
+    dispatch.move.call(view);
     return view;
   };
 
   view.size = function(x) {
     if (!arguments.length) return size;
     size = x;
+    dispatch.move.call(view);
     return view;
   };
 
@@ -46,6 +51,7 @@ pixymaps.view = function() {
     if (!arguments.length) return center;
     center = x;
     if (center.length < 3) center[2] = 0;
+    dispatch.move.call(view);
     return view;
   };
 
@@ -61,6 +67,7 @@ pixymaps.view = function() {
     angleSin = Math.sin(angle);
     angleCosi = Math.cos(-angle);
     angleSini = Math.sin(-angle);
+    dispatch.move.call(view);
     return view;
   };
 
@@ -98,5 +105,13 @@ pixymaps.view = function() {
     return view.angle(angle + x);
   };
 
+  view.on = function(type, listener) {
+    return arguments.length < 1
+        ? dispatch.on(type)
+        : (dispatch.on(type, listener), view);
+  };
+
   return view;
 };
+
+function pixymaps_view() {}

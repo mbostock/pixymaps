@@ -1,4 +1,116 @@
-(function(){pixymaps = {version: "0.0.1"}; // semver
+(function(){pixymaps = {version: "0.0.2"}; // semver
+pixymaps.dispatch = function() {
+  var dispatch = new pixymaps_dispatch(),
+      i = -1,
+      n = arguments.length;
+  while (++i < n) dispatch[arguments[i]] = pixymaps_dispatchEvent();
+  return dispatch;
+};
+
+function pixymaps_dispatch() {}
+
+pixymaps_dispatch.prototype.on = function(type, listener) {
+  var i = type.indexOf("."),
+      name = "";
+
+  // Extract optional namespace, e.g., "click.foo"
+  if (i > 0) {
+    name = type.substring(i + 1);
+    type = type.substring(0, i);
+  }
+
+  return arguments.length < 2
+      ? this[type].on(name)
+      : (this[type].on(name, listener), this);
+};
+
+function pixymaps_dispatchEvent() {
+  var listeners = [],
+      listenerByName = {};
+
+  function dispatch() {
+    var z = listeners, // defensive reference
+        i = -1,
+        n = z.length,
+        l;
+    while (++i < n) if (l = z[i].on) l.apply(this, arguments);
+  }
+
+  dispatch.on = function(name, listener) {
+    var l, i;
+
+    // return the current listener, if any
+    if (arguments.length < 2) return (l = listenerByName[name]) && l.on;
+
+    // remove the old listener, if any (with copy-on-write)
+    if (l = listenerByName[name]) {
+      l.on = null;
+      listeners = listeners.slice(0, i = listeners.indexOf(l)).concat(listeners.slice(i + 1));
+      delete listenerByName[name];
+    }
+
+    // add the new listener, if any
+    if (listener) {
+      listeners.push(listenerByName[name] = {on: listener});
+    }
+
+    return dispatch;
+  };
+
+  return dispatch;
+};
+var hosts = {},
+    hostRe = /^(?:([^:\/?\#]+):)?(?:\/\/([^\/?\#]*))?([^?\#]*)(?:\?([^\#]*))?(?:\#(.*))?/,
+    maxActive = 4, // per host
+    maxAttempts = 4; // per uri
+
+function pixymaps_queue(uri, callback) {
+  var hostname = (hostRe.lastIndex = 0, hostRe).exec(uri)[2] || "";
+
+  // Retrieve the host-specific queue.
+  var host = hosts[hostname] || (hosts[hostname] = {
+    active: 0,
+    queued: []
+  });
+
+  // Process the host's queue, perhaps immediately starting our request.
+  load.attempt = 0;
+  host.queued.push(load);
+  process(host);
+
+  // Issue the HTTP request.
+  function load() {
+    var image = new Image();
+    image.onload = end;
+    image.onerror = error;
+    image.src = uri;
+  }
+
+  // Handle the HTTP response.
+  // Hooray, callback our available data!
+  function end() {
+    host.active--;
+    callback(this);
+    process(host);
+  }
+
+  // Boo, an error occurred. We should retry, maybe.
+  function error(error) {
+    host.active--;
+    if (++load.attempt < maxAttempts) {
+      host.queued.push(load);
+    } else {
+      callback(null);
+    }
+    process(host);
+  }
+};
+
+function process(host) {
+  if (host.active >= maxActive || !host.queued.length) return;
+  host.active++;
+  host.queued.pop()();
+}
 var cache = {},
     head = null,
     tail = null,
@@ -65,33 +177,214 @@ function flush() {
     else if (head = value.next) head.previous = null;
   }
 }
-pixymaps.image = function() {
-  var image = {},
-      view,
-      url,
-      zoom = Math.round;
+pixymaps.url = function(template) {
+  var hosts = [],
+      repeat = "repeat-x"; // repeat, repeat-y, no-repeat
 
-  image.view = function(x) {
-    if (!arguments.length) return view;
-    view = x;
-    return image;
+  function format(c) {
+    var x = c[0], y = c[1], z = c[2], max = 1 << z;
+
+    // Repeat-x and repeat-y.
+    if (/^repeat(-x)?$/.test(repeat) && (x = x % max) < 0) x += max;
+    if (/^repeat(-y)?$/.test(repeat) && (y = y % max) < 0) y += max;
+    if (z < 0 || x < 0 || x >= max || y < 0 || y >= max) return null;
+
+    return template.replace(/{(.)}/g, function(s, v) {
+      switch (v) {
+        case "X": return x;
+        case "Y": return y;
+        case "Z": return z;
+        case "S": return hosts[Math.abs(x + y + z) % hosts.length];
+      }
+      return v;
+    });
+  }
+
+  format.template = function(x) {
+    if (!arguments.length) return template;
+    template = x;
+    return format;
   };
+
+  format.hosts = function(x) {
+    if (!arguments.length) return hosts;
+    hosts = x;
+    return format;
+  };
+
+  format.repeat = function(x) {
+    if (!arguments.length) return repeat;
+    repeat = x;
+    return format;
+  };
+
+  return format;
+};
+var pixymaps_viewPrototype = pixymaps_view.prototype;
+
+pixymaps.view = function() {
+  var view = new pixymaps_view(),
+      size = [0, 0],
+      coordinateSize = [256, 256],
+      center = [.5, .5, 0],
+      angle = 0,
+      angleCos = 1, // Math.cos(angle)
+      angleSin = 0, // Math.sin(angle)
+      angleCosi = 1, // Math.cos(-angle)
+      angleSini = 0, // Math.sin(-angle)
+      dispatch = pixymaps.dispatch("move");
+
+  view.point = function(coordinate) {
+    var kc = Math.pow(2, center[2] - (coordinate.length < 3 ? 0 : coordinate[2])),
+        dx = (coordinate[0] * kc - center[0]) * coordinateSize[0],
+        dy = (coordinate[1] * kc - center[1]) * coordinateSize[1];
+    return [
+      size[0] / 2 + angleCos * dx - angleSin * dy,
+      size[1] / 2 + angleSin * dx + angleCos * dy
+    ];
+  };
+
+  view.coordinate = function(point) {
+    var dx = (point[0] - size[0] / 2);
+        dy = (point[1] - size[1] / 2);
+    return [
+      center[0] + (angleCosi * dx - angleSini * dy) / coordinateSize[0],
+      center[1] + (angleSini * dx + angleCosi * dy) / coordinateSize[1],
+      center[2]
+    ];
+  };
+
+  // The number of points in a coordinate at zoom level 0.
+  view.coordinateSize = function(x) {
+    if (!arguments.length) return coordinateSize;
+    coordinateSize = x;
+    dispatch.move.call(view);
+    return view;
+  };
+
+  view.size = function(x) {
+    if (!arguments.length) return size;
+    size = x;
+    dispatch.move.call(view);
+    return view;
+  };
+
+  view.center = function(x) {
+    if (!arguments.length) return center;
+    center = x;
+    if (center.length < 3) center[2] = 0;
+    dispatch.move.call(view);
+    return view;
+  };
+
+  view.zoom = function(x) {
+    if (!arguments.length) return center[2];
+    return zoomBy(x - center[2]);
+  };
+
+  view.angle = function(x) {
+    if (!arguments.length) return angle;
+    angle = x;
+    angleCos = Math.cos(angle);
+    angleSin = Math.sin(angle);
+    angleCosi = Math.cos(-angle);
+    angleSini = Math.sin(-angle);
+    dispatch.move.call(view);
+    return view;
+  };
+
+  view.panBy = function(x) {
+    return view.center([
+      center[0] - (angleSini * x[1] + angleCosi * x[0]) / coordinateSize[0],
+      center[1] - (angleCosi * x[1] - angleSini * x[0]) / coordinateSize[1],
+      center[2]
+    ]);
+  };
+
+  function zoomBy(x) {
+    var k = Math.pow(2, x);
+    return view.center([
+      center[0] * k,
+      center[1] * k,
+      center[2] + x
+    ]);
+  }
+
+  view.zoomBy = function(x, point, coordinate) {
+    if (arguments.length < 2) return zoomBy(x);
+
+    // compute the coordinate of the center point
+    if (arguments.length < 3) coordinate = view.coordinate(point);
+
+    // compute the new point of the coordinate
+    var point2 = zoomBy(x).point(coordinate);
+
+    // pan so that the point and coordinate match after zoom
+    return view.panBy([point[0] - point2[0], point[1] - point2[1]]);
+  };
+
+  view.rotateBy = function(x) {
+    return view.angle(angle + x);
+  };
+
+  view.on = function(type, listener) {
+    return arguments.length < 1
+        ? dispatch.on(type)
+        : (dispatch.on(type, listener), view);
+  };
+
+  return view;
+};
+
+function pixymaps_view() {}
+var pixymaps_imageId = 0;
+
+pixymaps_viewPrototype.image = function() {
+  var image = {},
+      id = "image" + (++pixymaps_imageId),
+      view = this,
+      url,
+      zoom = Math.round,
+      visible,
+      dragging,
+      node = document.createElement("div"),
+      canvas = node.appendChild(document.createElement("canvas")),
+      context = canvas.getContext("2d");
+
+  node.style.overflow = "hidden";
+
+  /*
+  node.addEventListener("mousedown", mousedown, false);
+  window.addEventListener("mousemove", mousemove, false);
+  window.addEventListener("mouseup", mouseup, false);
+  */
 
   image.url = function(x) {
     if (!arguments.length) return url;
     url = typeof x === "string" && /{.}/.test(x) ? _url(x) : x;
+    render();
     return image;
   };
 
   image.zoom = function(x) {
     if (!arguments.length) return zoom;
     zoom = typeof x === "function" ? x : function() { return x; };
+    render();
     return image;
   };
 
-  image.render = function(canvas, callback) {
-    var context = canvas.getContext("2d"),
-        viewSize = view.size(),
+  image.visible = function(x) {
+    if (!arguments.length) return visible;
+    view.on("move." + id, (visible = x) ? render : null);
+    return image;
+  };
+
+  image.node = function() {
+    return node;
+  };
+
+  function render() {
+    var viewSize = view.size(),
         viewAngle = view.angle(),
         viewCenter = view.center(),
         viewZoom = viewCenter[2],
@@ -129,32 +422,52 @@ pixymaps.image = function() {
     // set the canvas size and transform
     var tx = viewSize[0] / 2 + dx * (x0 - viewCenter[0] * kz) | 0,
         ty = viewSize[1] / 2 + dy * (y0 - viewCenter[1] * kz) | 0;
-    canvas.style.webkitTransform = "matrix3d(1,0,0,0,0,1,0,0,0,0,1,0," + tx + "," + ty + ",0,1)";
+    canvas.style.webkitTransform = "matrix3d(" + (1/kz) + ",0,0,0,0," + (1/kz) + ",0,0,0,0,1,0," + tx + "," + ty + ",0,1)";
     canvas.width = (x1 - x0) * dx;
     canvas.height = (y1 - y0) * dy;
+    node.style.width = viewSize[0] + "px";
+    node.style.height = viewSize[1] + "px";
 
     // load each tile (hopefully from the cache) and draw it to the canvas
     tiles.forEach(function(tile) {
       var key = url(tile);
 
       // If there's something to show for this tile, show it.
-      return key == null ? done() : pixymaps_cache(key, function(image) {
+      if (key != null) pixymaps_cache(key, function(image) {
         context.drawImage(image, dx * (tile[0] - x0), dy * (tile[1] - y0));
-        done();
       });
-
-      // if that was the last tile, callback!
-      function done() {
-        if (!--remaining && callback) {
-          callback();
-        }
-      }
     });
+  }
 
-    return image;
-  };
+/*
+  function focusable() {
+    for (var p = node; p; p = p.parentNode) if (p.tabIndex >= 0) return p;
+    return window;
+  }
 
-  return image;
+  function mousedown(e) {
+    if (e.shiftKey) return;
+    dragging = e;
+    focusable().focus();
+    e.preventDefault();
+    document.body.style.cursor = "move";
+  }
+
+  function mousemove(e) {
+    if (!dragging) return;
+    view.panBy([e.clientX - dragging.clientX, e.clientY - dragging.clientY]);
+    dragging = e;
+  }
+
+  function mouseup(e) {
+    if (!dragging) return;
+    mousemove(e);
+    dragging = null;
+    document.body.style.cursor = "inherit";
+  }
+*/
+
+  return image.visible(true);
 };
 
 // scan-line conversion
@@ -211,201 +524,4 @@ function scanTriangle(a, b, c, load) {
   if (ab.dy) scanSpans(ca, ab, load);
   if (bc.dy) scanSpans(ca, bc, load);
 }
-var hosts = {},
-    hostRe = /^(?:([^:\/?\#]+):)?(?:\/\/([^\/?\#]*))?([^?\#]*)(?:\?([^\#]*))?(?:\#(.*))?/,
-    maxActive = 4, // per host
-    maxAttempts = 4; // per uri
-
-function pixymaps_queue(uri, callback) {
-  var hostname = (hostRe.lastIndex = 0, hostRe).exec(uri)[2] || "";
-
-  // Retrieve the host-specific queue.
-  var host = hosts[hostname] || (hosts[hostname] = {
-    active: 0,
-    queued: []
-  });
-
-  // Process the host's queue, perhaps immediately starting our request.
-  load.attempt = 0;
-  host.queued.push(load);
-  process(host);
-
-  // Issue the HTTP request.
-  function load() {
-    var image = new Image();
-    image.onload = end;
-    image.onerror = error;
-    image.src = uri;
-  }
-
-  // Handle the HTTP response.
-  // Hooray, callback our available data!
-  function end() {
-    host.active--;
-    callback(this);
-    process(host);
-  }
-
-  // Boo, an error occurred. We should retry, maybe.
-  function error(error) {
-    host.active--;
-    if (++load.attempt < maxAttempts) {
-      host.queued.push(load);
-    } else {
-      callback(null);
-    }
-    process(host);
-  }
-};
-
-function process(host) {
-  if (host.active >= maxActive || !host.queued.length) return;
-  host.active++;
-  host.queued.pop()();
-}
-pixymaps.url = function(template) {
-  var hosts = [],
-      repeat = "repeat-x"; // repeat, repeat-y, no-repeat
-
-  function format(c) {
-    var x = c[0], y = c[1], z = c[2], max = 1 << z;
-
-    // Repeat-x and repeat-y.
-    if (/^repeat(-x)?$/.test(repeat) && (x = x % max) < 0) x += max;
-    if (/^repeat(-y)?$/.test(repeat) && (y = y % max) < 0) y += max;
-    if (z < 0 || x < 0 || x >= max || y < 0 || y >= max) return null;
-
-    return template.replace(/{(.)}/g, function(s, v) {
-      switch (v) {
-        case "X": return x;
-        case "Y": return y;
-        case "Z": return z;
-        case "S": return hosts[Math.abs(x + y + z) % hosts.length];
-      }
-      return v;
-    });
-  }
-
-  format.template = function(x) {
-    if (!arguments.length) return template;
-    template = x;
-    return format;
-  };
-
-  format.hosts = function(x) {
-    if (!arguments.length) return hosts;
-    hosts = x;
-    return format;
-  };
-
-  format.repeat = function(x) {
-    if (!arguments.length) return repeat;
-    repeat = x;
-    return format;
-  };
-
-  return format;
-};
-pixymaps.view = function() {
-  var view = {},
-      size = [0, 0],
-      coordinateSize = [256, 256],
-      center = [.5, .5, 0],
-      angle = 0,
-      angleCos = 1, // Math.cos(angle)
-      angleSin = 0, // Math.sin(angle)
-      angleCosi = 1, // Math.cos(-angle)
-      angleSini = 0; // Math.sin(-angle)
-
-  view.point = function(coordinate) {
-    var kc = Math.pow(2, center[2] - (coordinate.length < 3 ? 0 : coordinate[2])),
-        dx = (coordinate[0] * kc - center[0]) * coordinateSize[0],
-        dy = (coordinate[1] * kc - center[1]) * coordinateSize[1];
-    return [
-      size[0] / 2 + angleCos * dx - angleSin * dy,
-      size[1] / 2 + angleSin * dx + angleCos * dy
-    ];
-  };
-
-  view.coordinate = function(point) {
-    var dx = (point[0] - size[0] / 2);
-        dy = (point[1] - size[1] / 2);
-    return [
-      center[0] + (angleCosi * dx - angleSini * dy) / coordinateSize[0],
-      center[1] + (angleSini * dx + angleCosi * dy) / coordinateSize[1],
-      center[2]
-    ];
-  };
-
-  // The number of points in a coordinate at zoom level 0.
-  view.coordinateSize = function(x) {
-    if (!arguments.length) return coordinateSize;
-    coordinateSize = x;
-    return view;
-  };
-
-  view.size = function(x) {
-    if (!arguments.length) return size;
-    size = x;
-    return view;
-  };
-
-  view.center = function(x) {
-    if (!arguments.length) return center;
-    center = x;
-    if (center.length < 3) center[2] = 0;
-    return view;
-  };
-
-  view.zoom = function(x) {
-    if (!arguments.length) return center[2];
-    return zoomBy(x - center[2]);
-  };
-
-  view.angle = function(x) {
-    if (!arguments.length) return angle;
-    angle = x;
-    angleCos = Math.cos(angle);
-    angleSin = Math.sin(angle);
-    angleCosi = Math.cos(-angle);
-    angleSini = Math.sin(-angle);
-    return view;
-  };
-
-  view.panBy = function(x) {
-    return view.center([
-      center[0] - (angleSini * x[1] + angleCosi * x[0]) / coordinateSize[0],
-      center[1] - (angleCosi * x[1] - angleSini * x[0]) / coordinateSize[1],
-      center[2]
-    ]);
-  };
-
-  function zoomBy(x) {
-    var k = Math.pow(2, x);
-    return view.center([
-      center[0] * k,
-      center[1] * k,
-      center[2] + x
-    ]);
-  }
-
-  view.zoomBy = function(x, point, coordinate) {
-    if (arguments.length < 2) return zoomBy(x);
-
-    // compute the coordinate of the center point
-    if (arguments.length < 3) coordinate = view.coordinate(point);
-
-    // compute the new point of the coordinate
-    var point2 = zoomBy(x).point(coordinate);
-
-    // pan so that the point and coordinate match after zoom
-    return view.panBy([point[0] - point2[0], point[1] - point2[1]]);
-  };
-
-  view.rotateBy = function(x) {
-    return view.angle(angle + x);
-  };
-
-  return view;
-};
 })()

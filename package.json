@@ -1,0 +1,8 @@
+{
+  "name": "pixymaps",
+  "version": "0.0.1",
+  "devDependencies": {
+    "d3": "2.7.2",
+    "uglify-js": "1.2.3"
+  }
+}

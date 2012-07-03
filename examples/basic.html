@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Pixymaps - Example</title>
+<script src="../node_modules/d3/d3.js"></script>
+<script src="../node_modules/d3/d3.geo.js"></script>
+<script src="../canvas.js"></script>
+<style>
+
+body {
+  font: 10px sans-serif;
+  width: 960px;
+  margin: 40px auto;
+  position: relative;
+}
+
+svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+</style>
+<body>
+<script>
+
+var width = 960,
+    height = 500;
+
+// var project = d3.geo.mercator()
+//     .scale(1)
+//     .translate([.5, .5]);
+
+var mercator = d3.geo.mercator();
+
+// var view = pixymaps.view()
+//     .size([width, height])
+//     .center(project([-122.41948, 37.76487]))
+//     .zoom(12);
+
+var tile = d3.geo.tile()
+    .projection(mercator)
+    .url(d3.geo.url("http://{S}tile.cloudmade.com"
+    + "/1a1b06b230af4efdbb989ea99e9841af" // http://cloudmade.com/register
+    + "/999/256/{Z}/{X}/{Y}.png")
+    .hosts(["a.", "b.", "c.", ""]));
+
+var svg = d3.select(document.body.appendChild(tile.node()))
+    .style("width", width + "px")
+    .style("height", height + "px")
+  .append("svg")
+    .attr("width", width)
+    .attr("height", height)
+  .call(d3.behavior.zoom()
+    .on("zoom", zoom));
+
+tile();
+
+function zoom() {
+//   var center = project2.invert(d3.event.translate);
+//   console.log(center);
+//   center[2] = Math.log(d3.event.scale) + 12;
+//   view.center(center);
+}
+
+</script>
+<footer>
+  © 2012
+  <a href="http://www.cloudmade.com/">CloudMade</a>,
+  <a href="http://www.openstreetmap.org/">OpenStreetMap</a> contributors,
+  <a href="http://creativecommons.org/licenses/by-sa/2.0/">CCBYSA</a>.
+</footer>
